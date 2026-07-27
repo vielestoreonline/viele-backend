@@ -1,3 +1,4 @@
+const { sendWelcomeEmail, sendPasswordResetEmail, sendOrderConfirmationEmail, sendSellerOrderNotification, sendPayoutConfirmationEmail } = require('./src/lib/email');
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
@@ -351,17 +352,20 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // ==========================================
-// EMAIL ENDPOINTS
+// EMAIL API Routes
 // ==========================================
 
 // Send welcome email
 app.post('/api/email/welcome', async (req, res) => {
   try {
     const { to, name } = req.body;
-    if (!to || !name) return res.status(400).json({ error: 'Email and name required' });
-    const result = await emailService.sendWelcomeEmail({ to, name });
-    res.json({ success: true, messageId: result.id });
+    if (!to || !name) {
+      return res.status(400).json({ error: 'Email and name are required' });
+    }
+    const result = await sendWelcomeEmail(to, name);
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
+    console.error('Welcome email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -369,53 +373,74 @@ app.post('/api/email/welcome', async (req, res) => {
 // Send password reset email
 app.post('/api/email/password-reset', async (req, res) => {
   try {
-    const { to, name, resetToken } = req.body;
-    if (!to || !resetToken) return res.status(400).json({ error: 'Email and reset token required' });
-    const result = await emailService.sendPasswordResetEmail({ to, name, resetToken });
-    res.json({ success: true, messageId: result.id });
+    const { to, resetUrl } = req.body;
+    if (!to || !resetUrl) {
+      return res.status(400).json({ error: 'Email and reset URL are required' });
+    }
+    const result = await sendPasswordResetEmail(to, resetUrl);
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
+    console.error('Password reset email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send order confirmation
+// Send order confirmation email
 app.post('/api/email/order-confirmation', async (req, res) => {
   try {
-    const result = await emailService.sendOrderConfirmationEmail(req.body);
-    res.json({ success: true, messageId: result.id });
+    const { to, orderDetails } = req.body;
+    if (!to || !orderDetails) {
+      return res.status(400).json({ error: 'Email and order details are required' });
+    }
+    const result = await sendOrderConfirmationEmail(to, orderDetails);
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
+    console.error('Order confirmation email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send seller notification
+// Send seller order notification
 app.post('/api/email/seller-notification', async (req, res) => {
   try {
-    const result = await emailService.sendSellerOrderNotification(req.body);
-    res.json({ success: true, messageId: result.id });
+    const { to, orderDetails } = req.body;
+    if (!to || !orderDetails) {
+      return res.status(400).json({ error: 'Email and order details are required' });
+    }
+    const result = await sendSellerOrderNotification(to, orderDetails);
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
+    console.error('Seller notification email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send payout confirmation
+// Send payout confirmation email
 app.post('/api/email/payout-confirmation', async (req, res) => {
   try {
-    const { to, sellerName, amount, orderId } = req.body;
-    if (!to || !amount) return res.status(400).json({ error: 'Email and amount required' });
-    const result = await emailService.sendPayoutConfirmationEmail({ to, sellerName, amount, orderId });
-    res.json({ success: true, messageId: result.id });
+    const { to, payoutDetails } = req.body;
+    if (!to || !payoutDetails) {
+      return res.status(400).json({ error: 'Email and payout details are required' });
+    }
+    const result = await sendPayoutConfirmationEmail(to, payoutDetails);
+    res.json({ success: true, messageId: result.messageId });
   } catch (error) {
+    console.error('Payout email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Check email service status
+// Email service status check
 app.get('/api/email/status', (req, res) => {
-  res.json({
-    enabled: emailService.isEmailEnabled(),
-    fromEmail: process.env.FROM_EMAIL || 'orders@viele.store',
-  });
+  try {
+    res.json({
+      status: 'operational',
+      service: 'Resend',
+      domain: process.env.RESEND_DOMAIN || 'Not configured'
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
 });
 
 // ==========================================
