@@ -362,8 +362,8 @@ app.post('/api/email/welcome', async (req, res) => {
     if (!to || !name) {
       return res.status(400).json({ error: 'Email and name are required' });
     }
-    const result = await sendWelcomeEmail(to, name);
-    res.json({ success: true, messageId: result.messageId });
+    const result = await sendWelcomeEmail({ to, name });
+    res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Welcome email error:', error);
     res.status(500).json({ error: error.message });
