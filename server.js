@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
 require('dotenv').config();
+const emailService = require('./src/lib/email');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -347,6 +348,74 @@ app.get('/api/transactions', async (req, res) => {
     console.error('Error retrieving transactions:', error);
     res.status(500).json({ error: error.message });
   }
+});
+
+// ==========================================
+// EMAIL ENDPOINTS
+// ==========================================
+
+// Send welcome email
+app.post('/api/email/welcome', async (req, res) => {
+  try {
+    const { to, name } = req.body;
+    if (!to || !name) return res.status(400).json({ error: 'Email and name required' });
+    const result = await emailService.sendWelcomeEmail({ to, name });
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send password reset email
+app.post('/api/email/password-reset', async (req, res) => {
+  try {
+    const { to, name, resetToken } = req.body;
+    if (!to || !resetToken) return res.status(400).json({ error: 'Email and reset token required' });
+    const result = await emailService.sendPasswordResetEmail({ to, name, resetToken });
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send order confirmation
+app.post('/api/email/order-confirmation', async (req, res) => {
+  try {
+    const result = await emailService.sendOrderConfirmationEmail(req.body);
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send seller notification
+app.post('/api/email/seller-notification', async (req, res) => {
+  try {
+    const result = await emailService.sendSellerOrderNotification(req.body);
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send payout confirmation
+app.post('/api/email/payout-confirmation', async (req, res) => {
+  try {
+    const { to, sellerName, amount, orderId } = req.body;
+    if (!to || !amount) return res.status(400).json({ error: 'Email and amount required' });
+    const result = await emailService.sendPayoutConfirmationEmail({ to, sellerName, amount, orderId });
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check email service status
+app.get('/api/email/status', (req, res) => {
+  res.json({
+    enabled: emailService.isEmailEnabled(),
+    fromEmail: process.env.FROM_EMAIL || 'orders@viele.store',
+n  });
 });
 
 // ==========================================
