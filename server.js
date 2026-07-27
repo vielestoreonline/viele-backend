@@ -1,8 +1,9 @@
-const { sendWelcomeEmail, sendPasswordResetEmail, sendOrderConfirmationEmail, sendSellerOrderNotification, sendPayoutConfirmationEmail } = require('./src/lib/email');
 const express = require('express');
 const cors = require('cors');
 const Stripe = require('stripe');
 require('dotenv').config();
+
+// Email service
 const emailService = require('./src/lib/email');
 
 const app = express();
@@ -352,7 +353,7 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 // ==========================================
-// EMAIL API Routes
+// EMAIL ENDPOINTS
 // ==========================================
 
 // Send welcome email
@@ -362,7 +363,8 @@ app.post('/api/email/welcome', async (req, res) => {
     if (!to || !name) {
       return res.status(400).json({ error: 'Email and name are required' });
     }
-    const result = await sendWelcomeEmail({ to, name });
+
+    const result = await emailService.sendWelcomeEmail({ to, name });
     res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Welcome email error:', error);
@@ -373,73 +375,174 @@ app.post('/api/email/welcome', async (req, res) => {
 // Send password reset email
 app.post('/api/email/password-reset', async (req, res) => {
   try {
-    const { to, resetUrl } = req.body;
-    if (!to || !resetUrl) {
-      return res.status(400).json({ error: 'Email and reset URL are required' });
+    const { to, name, resetToken } = req.body;
+    if (!to || !resetToken) {
+      return res.status(400).json({ error: 'Email and reset token are required' });
     }
-    const result = await sendPasswordResetEmail(to, resetUrl);
-    res.json({ success: true, messageId: result.messageId });
+
+    const result = await emailService.sendPasswordResetEmail({ to, name, resetToken });
+    res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Password reset email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send order confirmation email
+// Send order confirmation
 app.post('/api/email/order-confirmation', async (req, res) => {
   try {
-    const { to, orderDetails } = req.body;
-    if (!to || !orderDetails) {
-      return res.status(400).json({ error: 'Email and order details are required' });
+    const { to, name, orderId, items, total, shippingAddress } = req.body;
+    if (!to || !orderId || !items || !total) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
-    const result = await sendOrderConfirmationEmail(to, orderDetails);
-    res.json({ success: true, messageId: result.Id });
+
+    const result = await emailService.sendOrderConfirmationEmail({
+      to,
+      name,
+      orderId,
+      items,
+      total,
+      shippingAddress,
+    });
+    res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Order confirmation email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send seller order notification
+// Send seller notification
 app.post('/api/email/seller-notification', async (req, res) => {
   try {
-    const { to, orderDetails } = req.body;
-    if (!to || !orderDetails) {
-      return res.status(400).json({ error: 'Email and order details are required' });
+    const { to, sellerName, orderId, items, total } = req.body;
+    if (!to || !orderId || !items || !total) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
-    const result = await sendSellerOrderNotification(to, orderDetails);
-    res.json({ success: true, messageId: result.Id });
+
+    const result = await emailService.sendSellerOrderNotification({
+      to,
+      sellerName,
+      orderId,
+      items,
+      total,
+    });
+    res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Seller notification email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Send payout confirmation email
+// Send payout confirmation
 app.post('/api/email/payout-confirmation', async (req, res) => {
   try {
-    const { to, payoutDetails } = req.body;
-    if (!to || !payoutDetails) {
-      return res.status(400).json({ error: 'Email and payout details are required' });
+    const { to, sellerName, amount, orderId } = req.body;
+    if (!to || !amount) {
+      return res.status(400).json({ error: 'Email and amount are required' });
     }
-    const result = await sendPayoutConfirmationEmail(to, payoutDetails);
-    res.json({ success: true, messageId: result.Id });
+
+    const result = await emailService.sendPayoutConfirmationEmail({
+      to,
+      sellerName,
+      amount,
+      orderId,
+    });
+    res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Payout email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Email service status check
+// Check email service status
 app.get('/api/email/status', (req, res) => {
+  res.json({
+    enabled: emailService.isEmailEnabled(),
+    fromEmail: process.env.FROM_EMAIL || 'orders@viele.store',
+  });
+});
+
+// ==========================================
+// ERROR HANDLER
+// ==========================================
+// ==========================================
+// ADMIN ENDPOINTS
+// ==========================================
+
+// Simple owner check middleware
+function requireOwner(req, res, next) {
+  const ownerEmail = req.headers['x-owner-email'];
+  if (ownerEmail !== 'vielestoreonline@gmail.com') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+// Get admin dashboard stats
+app.get('/api/admin/stats', async (req, res) => {
   try {
+    // Return Stripe balance info
+    const balance = await stripe.balance.retrieve();
+    const available = balance.available.reduce((sum, b) => sum + b.amount, 0);
+    const pending = balance.pending.reduce((sum, b) => sum + b.amount, 0);
+
     res.json({
-      status: 'operational',
-      service: 'Resend',
-      domain: process.env.RESEND_DOMAIN || 'Not configured'
+      platformBalance: available / 100,
+      pendingBalance: pending / 100,
+      currency: 'gbp',
     });
   } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
+    console.error('Admin stats error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all payments (admin)
+app.get('/api/admin/payments', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const charges = await stripe.charges.list({ limit });
+
+    res.json({
+      payments: charges.data.map(charge => ({
+        id: charge.id,
+        amount: charge.amount / 100,
+        currency: charge.currency,
+        status: charge.status,
+        description: charge.description,
+        created: charge.created,
+        receiptUrl: charge.receipt_url,
+        metadata: charge.metadata,
+      })),
+      total: charges.data.length,
+    });
+  } catch (error) {
+    console.error('Admin payments error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all payouts/transfers (admin)
+app.get('/api/admin/payouts', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const transfers = await stripe.transfers.list({ limit });
+
+    res.json({
+      payouts: transfers.data.map(transfer => ({
+        id: transfer.id,
+        amount: transfer.amount / 100,
+        currency: transfer.currency,
+        status: transfer.reversed ? 'reversed' : 'completed',
+        destination: transfer.destination,
+        description: transfer.description,
+        created: transfer.created,
+      })),
+      total: transfers.data.length,
+    });
+  } catch (error) {
+    console.error('Admin payouts error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -464,6 +567,7 @@ app.listen(port, () => {
   console.log(`║  Port:     ${port}                          ║`);
   console.log(`║  Stripe:   ${process.env.STRIPE_SECRET_KEY ? '✅ Connected' : '❌ Missing'}            ║`);
   console.log(`║  Webhook:  ${process.env.STRIPE_WEBHOOK_SECRET ? '✅ Configured' : '⚠️  Dev mode'}        ║`);
+  console.log(`║  Email:    ${process.env.RESEND_API_KEY ? '✅ Connected' : '❌ Missing'}            ║`);
   console.log('╚══════════════════════════════════════════╝');
   console.log('');
   console.log('Endpoints:');
@@ -475,4 +579,15 @@ app.listen(port, () => {
   console.log('  GET  /api/balance                - View platform balance');
   console.log('  GET  /api/transactions           - View transactions');
   console.log('  POST /api/webhook                - Stripe webhook endpoint');
+  console.log('  GET  /api/admin/stats            - Admin dashboard stats');
+  console.log('  GET  /api/admin/payments         - Admin payments list');
+  console.log('  GET  /api/admin/payouts          - Admin payouts list');
+  console.log('');
+  console.log('Email Endpoints:');
+  console.log('  POST /api/email/welcome          - Send welcome email');
+  console.log('  POST /api/email/password-reset   - Send password reset');
+  console.log('  POST /api/email/order-confirm    - Send order confirmation');
+  console.log('  POST /api/email/seller-notify    - Send seller notification');
+  console.log('  POST /api/email/payout-confirm   - Send payout confirmation');
+  console.log('  GET  /api/email/status           - Check email service status');
 });
