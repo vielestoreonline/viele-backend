@@ -393,7 +393,7 @@ app.post('/api/email/order-confirmation', async (req, res) => {
       return res.status(400).json({ error: 'Email and order details are required' });
     }
     const result = await sendOrderConfirmationEmail(to, orderDetails);
-    res.json({ success: true, messageId: result.messageId });
+    res.json({ success: true, messageId: result.Id });
   } catch (error) {
     console.error('Order confirmation email error:', error);
     res.status(500).json({ error: error.message });
@@ -408,7 +408,7 @@ app.post('/api/email/seller-notification', async (req, res) => {
       return res.status(400).json({ error: 'Email and order details are required' });
     }
     const result = await sendSellerOrderNotification(to, orderDetails);
-    res.json({ success: true, messageId: result.messageId });
+    res.json({ success: true, messageId: result.Id });
   } catch (error) {
     console.error('Seller notification email error:', error);
     res.status(500).json({ error: error.message });
@@ -423,7 +423,7 @@ app.post('/api/email/payout-confirmation', async (req, res) => {
       return res.status(400).json({ error: 'Email and payout details are required' });
     }
     const result = await sendPayoutConfirmationEmail(to, payoutDetails);
-    res.json({ success: true, messageId: result.messageId });
+    res.json({ success: true, messageId: result.Id });
   } catch (error) {
     console.error('Payout email error:', error);
     res.status(500).json({ error: error.message });

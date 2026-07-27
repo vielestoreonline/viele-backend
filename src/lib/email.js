@@ -71,7 +71,7 @@ async function sendWelcomeEmail({ to, name }) {
 
     console.log('[EMAIL DEBUG] Resend raw result:', JSON.stringify(result));
 
-    console.log(`Welcome email sent to ${to}:`, result.id);
+    console.log(`Welcome email sent to ${to}:`, result.data.id);
     return result;
   } catch (error) {
     console.error('Failed to send welcome email:', error);
