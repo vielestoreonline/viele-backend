@@ -5,7 +5,12 @@ const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
   : null;
 
-const FROM_EMAIL = process.env.FROM_EMAIL || 'orders@viele.store';
+  // Debug: log if email service is initialized
+console.log('[EMAIL DEBUG] RESEND_API_KEY present:', !!process.env.RESEND_API_KEY);
+console.log('[EMAIL DEBUG] FROM_EMAIL:', FROM_EMAIL);
+console.log('[EMAIL DEBUG] resend client initialized:', !!resend);
+
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
 const APP_URL = process.env.FRONTEND_URL || 'https://www.viele.store';
 
 // Check if email service is available
@@ -23,6 +28,7 @@ async function sendWelcomeEmail({ to, name }) {
   }
 
   try {
+    console.log('[EMAIL DEBUG] Attempting to send to:', to, 'from:', FROM_EMAIL);
     const result = await resend.emails.send({
       from: `Viele <${FROM_EMAIL}>`,
       to,
