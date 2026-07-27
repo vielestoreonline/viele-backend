@@ -415,7 +415,7 @@ app.get('/api/email/status', (req, res) => {
   res.json({
     enabled: emailService.isEmailEnabled(),
     fromEmail: process.env.FROM_EMAIL || 'orders@viele.store',
-n  });
+  });
 });
 
 // ==========================================
