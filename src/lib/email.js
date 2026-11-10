@@ -134,7 +134,7 @@ async function sendPasswordResetEmail({ to, name, resetToken }) {
       `,
     });
 
-    console.log(`Password reset email sent to ${to}:`, result.id);
+    console.log(`Password reset email sent to ${to}:`, result.data.id);
     return result;
   } catch (error) {
     console.error('Failed to send password reset email:', error);
@@ -228,7 +228,7 @@ async function sendOrderConfirmationEmail({ to, name, orderId, items, total, shi
       `,
     });
 
-    console.log(`Order confirmation sent to ${to}:`, result.id);
+    console.log(`Order confirmation sent to ${to}:`, result.data.id);
     return result;
   } catch (error) {
     console.error('Failed to send order confirmation:', error);
@@ -290,7 +290,7 @@ async function sendSellerOrderNotification({ to, sellerName, orderId, items, tot
       `,
     });
 
-    console.log(`Seller notification sent to ${to}:`, result.id);
+    console.log(`Seller notification sent to ${to}:`, result.data.id);
     return result;
   } catch (error) {
     console.error('Failed to send seller notification:', error);
@@ -340,7 +340,7 @@ async function sendPayoutConfirmationEmail({ to, sellerName, amount, orderId }) 
       `,
     });
 
-    console.log(`Payout confirmation sent to ${to}:`, result.id);
+    console.log(`Payout confirmation sent to ${to}:`, result.data.id);
     return result;
   } catch (error) {
     console.error('Failed to send payout confirmation:', error);

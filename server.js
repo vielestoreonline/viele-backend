@@ -14,6 +14,53 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
+// Initialize Firebase Admin (subscription state sync to Firestore)
+let firestoreDb = null;
+try {
+  const admin = require('firebase-admin');
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+    : require('./serviceAccountKey.json');
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  firestoreDb = admin.firestore();
+  console.log('Firebase Admin initialized - subscription sync enabled');
+} catch (err) {
+  console.warn('Firebase Admin not initialized - subscription sync disabled:', err.message);
+}
+
+// Stripe subscription price IDs per seller tier (set in Railway env)
+const TIER_PRICES = {
+  premiere: process.env.STRIPE_PRICE_PREMIERE,
+  pro: process.env.STRIPE_PRICE_PRO,
+  'pro-plus': process.env.STRIPE_PRICE_PRO_PLUS,
+};
+
+function mapSubscriptionStatus(status) {
+  if (status === 'active' || status === 'trialing') return 'active';
+  if (status === 'past_due' || status === 'unpaid') return 'past_due';
+  if (status === 'canceled' || status === 'incomplete_expired') return 'cancelled';
+  return 'pending';
+}
+
+// Mirror a Stripe subscription's state into the Firestore user doc
+async function syncSubscriptionToUser(subscription) {
+  if (!firestoreDb) return;
+  const snap = await firestoreDb.collection('users')
+    .where('stripeSubscriptionId', '==', subscription.id)
+    .limit(1)
+    .get();
+  if (snap.empty) return;
+  const priceMetaTier = subscription.items?.data?.[0]?.price?.metadata?.tier;
+  await snap.docs[0].ref.update({
+    subscriptionStatus: mapSubscriptionStatus(subscription.status),
+    ...(priceMetaTier ? { tier: priceMetaTier } : {}),
+    currentPeriodEnd: subscription.current_period_end
+      ? new Date(subscription.current_period_end * 1000).toISOString()
+      : null,
+  });
+  console.log(`Synced subscription ${subscription.id} (${subscription.status}) -> user ${snap.docs[0].id}`);
+}
+
 // CORS - allow requests from your Vercel frontend
 const allowedOrigins = [
   'http://localhost:5173',           // Local dev
@@ -240,6 +287,67 @@ app.get('/api/payout/:transferId', async (req, res) => {
 });
 
 // ==========================================
+// SUBSCRIPTION CHECKOUT (seller picks a tier)
+// ==========================================
+app.post('/api/subscription/checkout', async (req, res) => {
+  try {
+    const { uid, tier, email } = req.body;
+    const price = TIER_PRICES[tier];
+    if (!uid || !tier) {
+      return res.status(400).json({ error: 'uid and tier are required' });
+    }
+    if (!price) {
+      return res.status(500).json({ error: `No Stripe price configured for tier "${tier}"` });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.viele.store';
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      line_items: [{ price, quantity: 1 }],
+      customer_email: email,
+      client_reference_id: uid,
+      metadata: { uid, tier },
+      subscription_data: { metadata: { uid, tier } },
+      success_url: `${frontendUrl}/seller?subscribed=1`,
+      cancel_url: `${frontendUrl}/seller`,
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Checkout session error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// BILLING PORTAL (manage / cancel subscription)
+// ==========================================
+app.post('/api/subscription/portal', async (req, res) => {
+  try {
+    const { uid } = req.body;
+    if (!uid) return res.status(400).json({ error: 'uid is required' });
+    if (!firestoreDb) return res.status(500).json({ error: 'Subscription sync not configured' });
+
+    const userDoc = await firestoreDb.collection('users').doc(uid).get();
+    const customerId = userDoc.data()?.stripeCustomerId;
+    if (!customerId) {
+      return res.status(400).json({ error: 'No billing account yet - subscribe to a plan first' });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.viele.store';
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${frontendUrl}/seller`,
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Portal session error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // WEBHOOK HANDLER (Stripe sends events here)
 // ==========================================
 // This MUST use express.raw() to verify the signature
@@ -294,6 +402,32 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
       // TODO: Update payout status in Firestore
       // TODO: Send payout confirmation to seller
       break;
+
+    case 'checkout.session.completed': {
+      const session = event.data.object;
+      if (session.mode === 'subscription' && firestoreDb && session.metadata?.uid) {
+        await firestoreDb.collection('users').doc(session.metadata.uid).update({
+          stripeCustomerId: session.customer,
+          stripeSubscriptionId: session.subscription,
+          tier: session.metadata.tier,
+          subscriptionStatus: 'active',
+        });
+        console.log(`Subscription checkout completed for user ${session.metadata.uid} (${session.metadata.tier})`);
+      }
+      break;
+    }
+
+    case 'customer.subscription.updated': {
+      const sub = event.data.object;
+      await syncSubscriptionToUser(sub);
+      break;
+    }
+
+    case 'customer.subscription.deleted': {
+      const sub = event.data.object;
+      await syncSubscriptionToUser(sub);
+      break;
+    }
 
     default:
       console.log(`Unhandled event type: ${event.type}`);
