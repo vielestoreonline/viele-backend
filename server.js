@@ -51,13 +51,13 @@ async function syncSubscriptionToUser(subscription) {
     .get();
   if (snap.empty) return;
   const priceMetaTier = subscription.items?.data?.[0]?.price?.metadata?.tier;
-  await snap.docs[0].ref.update({
+  await snap.docs[0].ref.set({
     subscriptionStatus: mapSubscriptionStatus(subscription.status),
     ...(priceMetaTier ? { tier: priceMetaTier } : {}),
     currentPeriodEnd: subscription.current_period_end
       ? new Date(subscription.current_period_end * 1000).toISOString()
       : null,
-  });
+  }, { merge: true });
   console.log(`Synced subscription ${subscription.id} (${subscription.status}) -> user ${snap.docs[0].id}`);
 }
 
@@ -406,12 +406,12 @@ app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, 
     case 'checkout.session.completed': {
       const session = event.data.object;
       if (session.mode === 'subscription' && firestoreDb && session.metadata?.uid) {
-        await firestoreDb.collection('users').doc(session.metadata.uid).update({
+        await firestoreDb.collection('users').doc(session.metadata.uid).set({
           stripeCustomerId: session.customer,
           stripeSubscriptionId: session.subscription,
           tier: session.metadata.tier,
           subscriptionStatus: 'active',
-        });
+        }, { merge: true });
         console.log(`Subscription checkout completed for user ${session.metadata.uid} (${session.metadata.tier})`);
       }
       break;
