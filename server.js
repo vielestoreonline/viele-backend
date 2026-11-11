@@ -82,6 +82,9 @@ app.use(cors({
   credentials: true,
 }));
 
+// Webhook route needs the RAW body for signature verification - must run before express.json()
+app.use('/api/webhook', express.raw({ type: 'application/json' }));
+
 // Parse JSON for regular routes
 app.use(express.json());
 
@@ -351,7 +354,7 @@ app.post('/api/subscription/portal', async (req, res) => {
 // WEBHOOK HANDLER (Stripe sends events here)
 // ==========================================
 // This MUST use express.raw() to verify the signature
-app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/api/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
