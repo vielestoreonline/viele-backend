@@ -333,6 +333,59 @@ app.get('/api/payout/:transferId', async (req, res) => {
 });
 
 // ==========================================
+// ORDER CHECKOUT (buyer pays via hosted Stripe Checkout)
+// ==========================================
+// Line items are built SERVER-SIDE from the Firestore order, so the buyer
+// can never tamper with amounts. Money lands in the platform account (escrow).
+app.post('/api/checkout-order', async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+    if (!firestoreDb) return res.status(500).json({ error: 'Database not configured' });
+
+    const orderSnap = await firestoreDb.collection('orders').doc(orderId).get();
+    if (!orderSnap.exists) return res.status(404).json({ error: 'Order not found' });
+    const order = orderSnap.data();
+
+    if (order.status !== 'pending') {
+      return res.status(400).json({ error: 'Order has already been processed' });
+    }
+
+    const lineItems = (order.items || []).map((item) => ({
+      quantity: item.quantity || 1,
+      price_data: {
+        currency: 'gbp',
+        unit_amount: Math.round((item.product?.price || 0) * 100),
+        product_data: {
+          name: item.product?.name || 'Product',
+          ...(item.product?.image ? { images: [item.product.image] } : {}),
+        },
+      },
+    }));
+
+    if (lineItems.length === 0) {
+      return res.status(400).json({ error: 'Order has no items' });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.viele.store';
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: lineItems,
+      customer_email: order.buyerEmail || undefined,
+      client_reference_id: orderId,
+      metadata: { orderId },
+      success_url: `${frontendUrl}/order-success?orderId=${orderId}`,
+      cancel_url: `${frontendUrl}/shop?checkout=cancelled`,
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('Order checkout error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // SUBSCRIPTION CHECKOUT (seller picks a tier)
 // ==========================================
 app.post('/api/subscription/checkout', async (req, res) => {
@@ -459,6 +512,38 @@ app.post('/api/webhook', async (req, res) => {
           subscriptionStatus: 'active',
         }, { merge: true });
         console.log(`Subscription checkout completed for user ${session.metadata.uid} (${session.metadata.tier})`);
+      } else if (session.mode === 'payment' && firestoreDb && session.metadata?.orderId) {
+        const orderRef = firestoreDb.collection('orders').doc(session.metadata.orderId);
+        await orderRef.set({
+          status: 'confirmed',
+          stripeSessionId: session.id,
+          stripePaymentIntentId: session.payment_intent,
+          paidAt: new Date().toISOString(),
+        }, { merge: true });
+        console.log(`Order payment completed: ${session.metadata.orderId}`);
+
+        // Best-effort confirmation email
+        try {
+          const orderSnap = await orderRef.get();
+          const order = orderSnap.data();
+          if (order?.buyerEmail) {
+            await emailService.sendOrderConfirmationEmail({
+              to: order.buyerEmail,
+              name: order.shippingAddress?.fullName || 'there',
+              orderId: session.metadata.orderId,
+              items: (order.items || []).map((i) => ({
+                image: i.product?.image || '',
+                name: i.product?.name || 'Product',
+                quantity: i.quantity || 1,
+                price: i.product?.price || 0,
+              })),
+              total: order.total || 0,
+              shippingAddress: order.shippingAddress || {},
+            });
+          }
+        } catch (emailErr) {
+          console.error('Order confirmation email failed:', emailErr.message);
+        }
       }
       break;
     }
