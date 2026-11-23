@@ -230,6 +230,49 @@ app.post('/api/create-seller-account', async (req, res) => {
 });
 
 // ==========================================
+// SELLER ONBOARDING LINK (re-open setup for an existing account)
+// ==========================================
+app.post('/api/seller-onboarding-link', async (req, res) => {
+  try {
+    const { accountId } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.viele.store';
+    const accountLink = await stripe.accountLinks.create({
+      account: accountId,
+      refresh_url: `${frontendUrl}/seller/onboarding?refresh=true`,
+      return_url: `${frontendUrl}/seller/onboarding?success=true`,
+      type: 'account_onboarding',
+    });
+
+    res.json({ onboardingUrl: accountLink.url });
+  } catch (error) {
+    console.error('Error creating onboarding link:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
+// SELLER ACCOUNT STATUS (has the seller finished Connect onboarding?)
+// ==========================================
+app.post('/api/seller-account-status', async (req, res) => {
+  try {
+    const { accountId } = req.body;
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+
+    const account = await stripe.accounts.retrieve(accountId);
+    res.json({
+      chargesEnabled: account.charges_enabled,
+      payoutsEnabled: account.payouts_enabled,
+      onboardingComplete: !!account.details_submitted,
+    });
+  } catch (error) {
+    console.error('Error retrieving seller account:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ==========================================
 // PAYOUT TO SELLER (Release funds after delivery)
 // ==========================================
 // Transfer money from your account to the seller's connected account
