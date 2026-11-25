@@ -380,7 +380,7 @@ app.post('/api/checkout-order', async (req, res) => {
 
     res.json({ url: session.url });
   } catch (err) {
-    console.error('Order checkout error:', err.message);
+    console.error('Order checkout error:', err.message, '| type:', err.type, '| code:', err.code, '| cause:', err.cause?.message || err.cause);
     res.status(500).json({ error: err.message });
   }
 });
@@ -413,7 +413,7 @@ app.post('/api/subscription/checkout', async (req, res) => {
 
     res.json({ url: session.url });
   } catch (err) {
-    console.error('Checkout session error:', err.message);
+    console.error('Checkout session error:', err.message, '| type:', err.type, '| code:', err.code, '| cause:', err.cause?.message || err.cause);
     res.status(500).json({ error: err.message });
   }
 });
