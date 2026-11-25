@@ -9,9 +9,11 @@ const emailService = require('./src/lib/email');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Initialize Stripe
+// Initialize Stripe (fetch-based HTTP client: Node's https module can hang on
+// broken-IPv6 hosts, surfacing as StripeConnectionError)
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
+  httpClient: Stripe.createFetchHttpClient(),
 });
 
 // Initialize Firebase Admin (subscription state sync to Firestore)
