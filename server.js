@@ -102,25 +102,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// TEMPORARY diagnostic: raw HTTPS call to Stripe, bypassing the SDK, to reveal
-// the real connectivity/auth error. Remove once the connection issue is fixed.
-app.get('/api/stripe-ping', async (req, res) => {
-  try {
-    const r = await fetch('https://api.stripe.com/v1/charges?limit=1', {
-      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` },
-    });
-    const body = await r.text();
-    res.json({ status: r.status, ok: r.ok, body: body.slice(0, 300) });
-  } catch (err) {
-    res.json({
-      error: err.message,
-      name: err.name,
-      code: err.cause?.code,
-      cause: err.cause?.message || String(err.cause),
-    });
-  }
-});
-
 // ==========================================
 // CREATE PAYMENT INTENT (Buyer pays)
 // ==========================================
