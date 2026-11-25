@@ -348,11 +348,55 @@ async function sendPayoutConfirmationEmail({ to, sellerName, amount, orderId }) 
   }
 }
 
+// Shipping notification: seller added tracking / order shipped
+async function sendShippingUpdateEmail({ to, name, orderId, carrier, trackingNumber, trackingUrl }) {
+  if (!resend) {
+    console.log('[EMAIL MOCK] Shipping update to:', to, 'Order:', orderId);
+    return { id: 'mock-shipping-' + Date.now() };
+  }
+
+  const trackButton = trackingUrl
+    ? `<div style="text-align: center; margin: 24px 0;">
+         <a href="${trackingUrl}" style="display: inline-block; background: #000; color: #fff; padding: 14px 32px; border-radius: 999px; text-decoration: none; font-weight: 600;">Track your parcel</a>
+       </div>`
+    : '';
+
+  try {
+    const result = await resend.emails.send({
+      from: `Viele Orders <${FROM_EMAIL}>`,
+      to,
+      subject: `Your order #${orderId} has shipped`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+          <h1 style="font-size: 24px; margin-bottom: 8px;">Your order is on its way!</h1>
+          <p style="color: #555;">Hi ${name}, great news — your order <strong>#${orderId}</strong> has shipped.</p>
+          <div style="background: #f9fafb; border-radius: 12px; padding: 20px; margin: 20px 0;">
+            <p style="margin: 0 0 8px;"><strong>Carrier:</strong> ${carrier}</p>
+            <p style="margin: 0;"><strong>Tracking number:</strong> ${trackingNumber}</p>
+          </div>
+          ${trackButton}
+          <p style="color: #555;">You can also follow your order anytime on your
+            <a href="https://www.viele.store/track" style="color: #000;">Track Orders</a> page.</p>
+          <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;">
+          <p style="color: #999; font-size: 12px;">Viele — fashion from emerging brands</p>
+        </div>
+      `,
+    });
+
+    console.log(`Shipping update sent to ${to}:`, result.data?.id);
+    return result;
+  } catch (error) {
+    console.error('Failed to send shipping update:', error);
+    throw error;
+  }
+}
+
 module.exports = {
   isEmailEnabled,
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,
+  sendShippingUpdateEmail,
   sendSellerOrderNotification,
   sendPayoutConfirmationEmail,
 };

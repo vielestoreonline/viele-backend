@@ -388,6 +388,44 @@ app.post('/api/checkout-order', async (req, res) => {
 });
 
 // ==========================================
+// REFUND AN ORDER (admin, after approving a return)
+// ==========================================
+app.post('/api/refund-order', async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+    if (!firestoreDb) return res.status(500).json({ error: 'Database not configured' });
+
+    const snap = await firestoreDb.collection('orders').doc(orderId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'Order not found' });
+    const order = snap.data();
+
+    if (!order.stripePaymentIntentId) {
+      return res.status(400).json({ error: 'No payment found for this order' });
+    }
+    if (order.returnStatus === 'refunded') {
+      return res.status(400).json({ error: 'This order has already been refunded' });
+    }
+
+    const refund = await stripe.refunds.create({
+      payment_intent: order.stripePaymentIntentId,
+    });
+
+    await snap.ref.set({
+      returnStatus: 'refunded',
+      refundedAt: new Date().toISOString(),
+      stripeRefundId: refund.id,
+    }, { merge: true });
+
+    console.log(`Refund issued for order ${orderId}: ${refund.id} (£${refund.amount / 100})`);
+    res.json({ refundId: refund.id, status: refund.status, amount: refund.amount / 100 });
+  } catch (err) {
+    console.error('Refund error:', err.message, '| type:', err.type);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // SUBSCRIPTION CHECKOUT (seller picks a tier)
 // ==========================================
 app.post('/api/subscription/checkout', async (req, res) => {
@@ -674,6 +712,36 @@ app.post('/api/email/order-confirmation', async (req, res) => {
     res.json({ success: true, messageId: result.id });
   } catch (error) {
     console.error('Order confirmation email error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send shipping notification (called by the seller dashboard when tracking is added)
+app.post('/api/email/shipping-update', async (req, res) => {
+  try {
+    const { orderId, trackingUrl } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+    if (!firestoreDb) return res.status(500).json({ error: 'Database not configured' });
+
+    const snap = await firestoreDb.collection('orders').doc(orderId).get();
+    if (!snap.exists) return res.status(404).json({ error: 'Order not found' });
+    const order = snap.data();
+
+    if (!order.buyerEmail) {
+      return res.json({ sent: false, reason: 'Order has no buyer email' });
+    }
+
+    const result = await emailService.sendShippingUpdateEmail({
+      to: order.buyerEmail,
+      name: order.shippingAddress?.fullName || 'there',
+      orderId,
+      carrier: order.carrier || 'the carrier',
+      trackingNumber: order.trackingNumber || '',
+      trackingUrl: trackingUrl || null,
+    });
+    res.json({ success: true, messageId: result.id });
+  } catch (error) {
+    console.error('Shipping update email error:', error);
     res.status(500).json({ error: error.message });
   }
 });
