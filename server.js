@@ -61,6 +61,19 @@ async function syncSubscriptionToUser(subscription) {
       : null,
   }, { merge: true });
   console.log(`Synced subscription ${subscription.id} (${subscription.status}) -> user ${snap.docs[0].id}`);
+
+  // Keep the storefront verified tick in sync (Pro+ only)
+  try {
+    const userData = snap.docs[0].data();
+    if (userData.brandId) {
+      const effectiveTier = priceMetaTier || userData.tier;
+      await firestoreDb.collection('brands').doc(userData.brandId).set({
+        isVerified: mapSubscriptionStatus(subscription.status) === 'active' && effectiveTier === 'pro-plus',
+      }, { merge: true });
+    }
+  } catch (e) {
+    console.error('Brand verification sync failed:', e.message);
+  }
 }
 
 // CORS - allow requests from your Vercel frontend
@@ -552,6 +565,19 @@ app.post('/api/webhook', async (req, res) => {
           subscriptionStatus: 'active',
         }, { merge: true });
         console.log(`Subscription checkout completed for user ${session.metadata.uid} (${session.metadata.tier})`);
+
+        // Verified tick for Pro+ stores
+        try {
+          const userSnap = await firestoreDb.collection('users').doc(session.metadata.uid).get();
+          const brandId = userSnap.data()?.brandId;
+          if (brandId) {
+            await firestoreDb.collection('brands').doc(brandId).set({
+              isVerified: session.metadata.tier === 'pro-plus',
+            }, { merge: true });
+          }
+        } catch (e) {
+          console.error('Brand verification update failed:', e.message);
+        }
       } else if (session.mode === 'payment' && firestoreDb && session.metadata?.orderId) {
         const orderRef = firestoreDb.collection('orders').doc(session.metadata.orderId);
         await orderRef.set({
